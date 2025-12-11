@@ -1,37 +1,14 @@
-from typing import List, Optional
 from pydantic import BaseModel, HttpUrl
+from datetime import datetime
 
-
-class TagBase(BaseModel):
-    name: str
-
-class TagCreate(TagBase):
-    pass
-
-class Tag(TagBase):
-    id: int
-
-    model_config = {"from_attributes": True}
-
-
-class BookmarkBase(BaseModel):
-    url: HttpUrl
+class BookmarkCreate(BaseModel):
     title: str
-    description: Optional[str] = None
+    url: str
 
-class BookmarkCreate(BookmarkBase):
-    tags: List[str] = []
-
-class BookmarkUpdate(BaseModel):
-    url: Optional[HttpUrl] = None
-    title: Optional[str] = None
-    description: Optional[str] = None
-    is_archived: Optional[bool] = None
-    tags: Optional[List[str]] = None
-
-class Bookmark(BookmarkBase):
+class BookmarkResponse(BaseModel):
     id: int
-    is_archived: bool
-    tags: List[Tag] = []
+    title: str
+    url: str
+    created_at: datetime
 
     model_config = {"from_attributes": True}
