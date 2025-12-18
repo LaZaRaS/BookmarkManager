@@ -1,0 +1,133 @@
+---
+- name: Deploy Bookmark Manager
+  hosts: all
+  become: yes
+  vars:
+    app_dir: /opt/bookmark-manager
+    db_root_password: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+    db_password: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Install Docker dependencies
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Install Docker
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Start and enable Docker service
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Create application directory
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Create secrets directory
+      file:
+        path: "{{ app_dir }}/secrets"
+        state: directory
+        mode: '0700'
+
+    - name: Copy application files
+      copy:
+        src: "{{ item }}"
+        dest: "{{ app_dir }}/"
+      with_items:
+        - docker-compose.yml
+        - Dockerfile
+        - requirements.txt
+
+    - name: Copy app directory
+      copy:
+        src: app/
+        dest: "{{ app_dir }}/app/"
+
+    - name: Create database root password secret
+      copy:
+        content: "{{ db_root_password }}"
+        dest: "{{ app_dir }}/secrets/db_root_password.txt"
+        mode: '0600'
+      no_log: true
+
+    - name: Create database user password secret
+      copy:
+        content: "{{ db_password }}"
+        dest: "{{ app_dir }}/secrets/db_password.txt"
+        mode: '0600'
+      no_log: true
+
+    - name: Create .env file
+      copy:
+        dest: "{{ app_dir }}/.env"
+        content: |
+          DB_HOST=mysql
+          DB_PORT=3306
+          DB_USER=bookmarkuser
+          DB_PASSWORD_FILE=/run/secrets/db_password
+          DB_NAME=bookmarks
+          APP_PORT=8080
+          BASE_URL=http://localhost:8080
+        mode: '0600'
+
+    - name: Stop existing containers
+      command: docker compose down
+      args:
+        chdir: "{{ app_dir }}"
+      ignore_errors: yes
+
+    - name: Start application with Docker Compose
+      command: docker compose up -d --build
+      args:
+        chdir: "{{ app_dir }}"
+
+    - name: Wait for API to be healthy
+      uri:
+        url: http://localhost:8080/health
+        status_code: 200
+      register: result
+      until: result.status == 200
+      retries: 30
+      delay: 5
+
+    - name: Display deployment info
+      debug:
+        msg:
+          - "Bookmark Manager deployed successfully!"
+          - "API available at: http://localhost:8080"
+          - "API docs at: http://localhost:8080/docs"

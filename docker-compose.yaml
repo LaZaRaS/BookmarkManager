@@ -1,0 +1,57 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: bookmark_mysql
+    secrets:
+      - db_root_password
+      - db_password
+    environment:
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/db_root_password
+      MYSQL_DATABASE: bookmarks
+      MYSQL_USER: bookmarkuser
+      MYSQL_PASSWORD_FILE: /run/secrets/db_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$(cat /run/secrets/db_root_password)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bookmark_network
+
+  api:
+    build: .
+    container_name: bookmark_api
+    secrets:
+      - db_password
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: bookmarkuser
+      DB_PASSWORD_FILE: /run/secrets/db_password
+      DB_NAME: bookmarks
+      APP_PORT: 8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - bookmark_network
+
+secrets:
+  db_root_password:
+    file: ./secrets/db_root_password.txt
+  db_password:
+    file: ./secrets/db_password.txt
+
+volumes:
+  mysql_data:
+
+networks:
+  bookmark_network:
+    driver: bridge
